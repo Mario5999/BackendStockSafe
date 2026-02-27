@@ -9,7 +9,7 @@ const registrosystemRoutes = require('./Routes/Registro-Sistema.js');
 const loginsystemRoutes = require('./Routes/Login-Sistema.js');
 const seccionRoutes = require('./Routes/Seccion.js');
 const productoRoutes = require('./Routes/Producto.js');
-
+const inventoryRoutes = require('./Routes/Inventory.js');
 app.use(express.json());
 
 // Usar rutas
@@ -19,7 +19,7 @@ app.use('/api', registrosystemRoutes);
 app.use('/api', loginsystemRoutes);
 app.use('/api', seccionRoutes);
 app.use('/api', productoRoutes);
-
+app.use('/api', inventoryRoutes);
 app.get('/', (req, res) => {
   res.send('¡Backend funcionando correctamente!');
 });
