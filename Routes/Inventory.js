@@ -35,4 +35,28 @@ router.post('/inventory/check', (req, res) => {
   }
 });
 
+// PUT: actualizar solo la cantidad de un producto
+router.put('/products/:id/cantidad', (req, res) => {
+  const { id } = req.params;
+  const { cantidad } = req.body;
+
+  if (cantidad === undefined) {
+    return res.status(400).json({ error: "La cantidad es obligatoria." });
+  }
+
+  const index = productos.findIndex(prod => prod.id == id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: "Producto no encontrado." });
+  }
+
+  // Actualizar solo la cantidad
+  productos[index].cantidad = cantidad;
+
+  return res.status(200).json({
+    message: "Cantidad actualizada correctamente.",
+    data: productos[index]
+  });
+});
+
 module.exports = router;
