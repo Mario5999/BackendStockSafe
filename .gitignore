@@ -1,0 +1,52 @@
+# Dependencias
+node_modules/
+
+# Entornos
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Compilados / builds
+dist/
+build/
+out/
+.expo/
+.expo-shared/
+
+# Expo / React Native
+android/
+ios/
+*.keystore
+*.jks
+
+# Metro bundler cache
+.expo/
+.expo-shared/
+.expo/web-build/
+.expo/packager-info.json
+.expo/metro-cache/
+
+# VS Code
+.vscode/
+
+# Coverage
+coverage/
+
+# Cache general
+.cache/
+.tmp/
+temp/
