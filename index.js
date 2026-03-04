@@ -10,6 +10,8 @@ const loginsystemRoutes = require('./Routes/Login-Sistema.js');
 const seccionRoutes = require('./Routes/Seccion.js');
 const productoRoutes = require('./Routes/Producto.js');
 const inventoryRoutes = require('./Routes/Inventory.js');
+const recoverpassword = require('./Routes/Recuperar.js');
+const generatepdf = require('./Routes/GenerarPDF.js');
 
 app.use(express.json());
 
@@ -21,6 +23,8 @@ app.use('/api', loginsystemRoutes);
 app.use('/api', seccionRoutes);
 app.use('/api', productoRoutes);
 app.use('/api', inventoryRoutes);
+app.use('/api', recoverpassword);
+app.use('/api', generatepdf);
 
 app.get('/', (req, res) => {
   res.send('¡Backend funcionando correctamente!');
