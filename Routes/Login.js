@@ -20,12 +20,12 @@ router.post('/login', (req, res) => {
 
   // Validar campos vacíos
   if (!email || !password) {
-    return res.status(400).json({ error: "Email y contraseña son obligatorios." });
+    return res.status(400).json({ error: "Correo y contraseña son obligatorios." });
   }
 
   // Validar email
   if (email !== fakeUser.email) {
-    return res.status(404).json({ error: "El usuario no existe." });
+    return res.status(404).json({ error: "El correo no existe." });
   }
 
   // Validar contraseña

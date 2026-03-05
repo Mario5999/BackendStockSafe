@@ -13,7 +13,8 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
-    "nodemailer": "^8.0.1"
+    "nodemailer": "^8.0.1",
+    "pdfkit": "^0.17.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

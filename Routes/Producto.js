@@ -1,17 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const store = require('../data/store');
 
-// Base de datos simulada
-let productos = [];
+// Base de datos simulada compartida
+const productos = store.productos;
 
 // Crear producto
 router.post('/products', (req, res) => {
-  const { nombre, categoria, cantidad, unidad, stockMinimo } = req.body;
+  const { nombre, categoria, cantidad, unidad, stockMinimo, stockMaximo, stockExcedente } = req.body;
+  const maximo = stockMaximo ?? stockExcedente;
 
   // Validación
-  if (!nombre || !categoria || !cantidad || !unidad || !stockMinimo) {
+  if (!nombre || !categoria || cantidad === undefined || !unidad || stockMinimo === undefined || maximo === undefined) {
     return res.status(400).json({
-      error: "Todos los campos son obligatorios: nombre, categoría, cantidad, unidad, stock mínimo."
+      error: "Todos los campos son obligatorios: nombre, categoría, cantidad, unidad, stock mínimo y stock máximo."
+    });
+  }
+
+  if (maximo < stockMinimo) {
+    return res.status(400).json({
+      error: "El stock máximo debe ser mayor o igual al stock mínimo."
     });
   }
 
@@ -21,7 +29,11 @@ router.post('/products', (req, res) => {
     categoria,      // Aquí se guarda la sección seleccionada
     cantidad,
     unidad,
-    stockMinimo
+    stockMinimo,
+    stockMaximo: maximo,
+    stockInicial: cantidad,
+    entradas: 0,
+    salidas: 0,
   };
 
   productos.push(nuevoProducto);
@@ -34,16 +46,23 @@ router.post('/products', (req, res) => {
 
 // Obtener todos los productos
 router.get('/products', (req, res) => {
+  const productosConMovimientos = productos.map((producto) => ({
+    ...producto,
+    stockInicial: producto.stockInicial ?? producto.cantidad,
+    entradas: producto.entradas ?? 0,
+    salidas: producto.salidas ?? 0,
+  }));
+
   return res.status(200).json({
     message: "Lista de productos",
-    data: productos
+    data: productosConMovimientos
   });
 });
 
 // Editar producto
 router.put('/products/:id', (req, res) => {
   const { id } = req.params;
-  const { nombre, categoria, cantidad, unidad, stockMinimo } = req.body;
+  const { nombre, categoria, cantidad, unidad, stockMinimo, stockMaximo, stockExcedente } = req.body;
 
   const index = productos.findIndex(prod => prod.id == id);
 
@@ -53,9 +72,16 @@ router.put('/products/:id', (req, res) => {
 
   if (nombre) productos[index].nombre = nombre;
   if (categoria) productos[index].categoria = categoria;
-  if (cantidad) productos[index].cantidad = cantidad;
+  if (cantidad !== undefined) productos[index].cantidad = cantidad;
   if (unidad) productos[index].unidad = unidad;
-  if (stockMinimo) productos[index].stockMinimo = stockMinimo;
+  if (stockMinimo !== undefined) productos[index].stockMinimo = stockMinimo;
+
+  const maximo = stockMaximo ?? stockExcedente;
+  if (maximo !== undefined) productos[index].stockMaximo = maximo;
+
+  if (productos[index].stockMaximo !== undefined && productos[index].stockMinimo !== undefined && productos[index].stockMaximo < productos[index].stockMinimo) {
+    return res.status(400).json({ error: "El stock máximo debe ser mayor o igual al stock mínimo." });
+  }
 
   return res.status(200).json({
     message: "Producto actualizado correctamente.",

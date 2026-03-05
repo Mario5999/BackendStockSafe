@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const store = require('../data/store');
 
-// Base de datos simulada
-let secciones = [];
+// Base de datos simulada compartida
+const secciones = store.secciones;
 
 // Crear sección
 router.post('/sections', (req, res) => {

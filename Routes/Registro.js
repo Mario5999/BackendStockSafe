@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const store = require('../data/store');
 
-// Base de datos simulada
-let restaurantes = [];
+// Base de datos simulada compartida
+const restaurantes = store.restaurantes;
 
 // POST: registrar restaurante
 router.post('/register', (req, res) => {
