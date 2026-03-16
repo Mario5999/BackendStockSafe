@@ -1,99 +1,182 @@
 const express = require('express');
 const router = express.Router();
-const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const { pool } = require('../db/pool');
 
-// Simulación de usuarios
-let usuarios = [
-  { id: 1, email: "usuario1@example.com", password: "123456", tokenRecuperacion: null, tokenExpira: null },
-  { id: 2, email: "usuario2@example.com", password: "abcdef", tokenRecuperacion: null, tokenExpira: null }
-];
+async function findRestaurantByEmail(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const result = await pool.query(
+    'SELECT id, email, reset_token, reset_token_expires_at FROM restaurantes WHERE lower(email) = $1 LIMIT 1',
+    [normalizedEmail]
+  );
+  return result.rows[0] || null;
+}
 
-// Configurar transporte de correo
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "TU_CORREO@gmail.com",
-    pass: "TU_PASSWORD_DE_APLICACION"
+async function findRestaurantByToken(token) {
+  const result = await pool.query(
+    `SELECT id, email, reset_token, reset_token_expires_at
+     FROM restaurantes
+     WHERE reset_token = $1
+       AND reset_token_expires_at IS NOT NULL
+       AND reset_token_expires_at > NOW()
+     LIMIT 1`,
+    [token]
+  );
+
+  return result.rows[0] || null;
+}
+
+function hasActiveRecoveryToken(restaurant) {
+  if (!restaurant || !restaurant.reset_token || !restaurant.reset_token_expires_at) {
+    return false;
   }
-});
+
+  return new Date(restaurant.reset_token_expires_at).getTime() > Date.now();
+}
 
 // 1️⃣ Solicitar recuperación (genera token y envía correo)
-router.post('/recuperar/solicitar', (req, res) => {
+router.post('/recuperar/solicitar', async (req, res) => {
   const { email } = req.body;
 
-  const usuario = usuarios.find(u => u.email === email);
-
-  if (!usuario) {
-    return res.status(404).json({ error: "El correo no está registrado." });
+  if (!email) {
+    return res.status(400).json({ error: 'El correo es obligatorio.' });
   }
 
-  // Generar token seguro
-  const token = crypto.randomBytes(20).toString('hex');
+  try {
+    const restaurante = await findRestaurantByEmail(email);
 
-  // Guardar token y expiración (15 minutos)
-  usuario.tokenRecuperacion = token;
-  usuario.tokenExpira = Date.now() + 15 * 60 * 1000;
-
-  // Enlace al frontend
-  const enlace = `http://localhost:3000/recuperar/${token}`;
-
-  // Enviar correo
-  const mailOptions = {
-    from: "TU_CORREO@gmail.com",
-    to: usuario.email,
-    subject: "Recuperación de contraseña",
-    html: `
-      <h2>Recuperación de contraseña</h2>
-      <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
-      <a href="${enlace}">${enlace}</a>
-      <p>Este enlace expirará en 15 minutos.</p>
-    `
-  };
-
-  transporter.sendMail(mailOptions, (error) => {
-    if (error) {
-      return res.status(500).json({ error: "Error al enviar el correo." });
+    if (!restaurante) {
+      return res.status(404).json({ error: "El correo no está registrado." });
     }
 
+    // Generar token seguro
+    const token = crypto.randomBytes(20).toString('hex');
+
+    // Guardar token y expiración (15 minutos)
+    await pool.query(
+      `UPDATE restaurantes
+       SET reset_token = $1,
+           reset_token_expires_at = NOW() + INTERVAL '15 minutes'
+       WHERE id = $2`,
+      [token, restaurante.id]
+    );
+
     return res.status(200).json({
-      message: "Correo enviado. Revisa tu bandeja para continuar."
+      message: 'Token Generado Correctamente'
     });
-  });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo generar el token de recuperación.' });
+  }
 });
 
 // 2️⃣ Validar token (cuando el usuario abre la vista del frontend)
-router.get('/recuperar/validar/:token', (req, res) => {
+router.get('/recuperar/validar/:token', async (req, res) => {
   const { token } = req.params;
 
-  const usuario = usuarios.find(
-    u => u.tokenRecuperacion === token && u.tokenExpira > Date.now()
-  );
+  try {
+    const restaurante = await findRestaurantByToken(token);
 
-  if (!usuario) {
-    return res.status(400).json({ error: "Token inválido o expirado." });
+    if (!restaurante) {
+      return res.status(400).json({ error: "Token inválido o expirado." });
+    }
+
+    return res.status(200).json({ message: "Token válido." });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo validar el token.' });
+  }
+});
+
+// 2.1) Validación interna por correo (sin exponer token)
+router.post('/recuperar/interno/validar', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'El correo es obligatorio.' });
   }
 
-  return res.status(200).json({ message: "Token válido." });
+  try {
+    const restaurante = await findRestaurantByEmail(email);
+
+    if (!restaurante) {
+      return res.status(404).json({ error: 'El correo no está registrado.' });
+    }
+
+    if (!hasActiveRecoveryToken(restaurante)) {
+      return res.status(400).json({ error: 'No hay un token activo para este correo o ya expiró.' });
+    }
+
+    return res.status(200).json({ message: 'Token válido. Puedes cambiar la contraseña.' });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo validar el token interno.' });
+  }
 });
 
 // 3️⃣ Cambiar contraseña
-router.post('/recuperar/cambiar', (req, res) => {
+router.post('/recuperar/cambiar', async (req, res) => {
   const { token, nuevaPassword } = req.body;
 
-  const usuario = usuarios.find(
-    u => u.tokenRecuperacion === token && u.tokenExpira > Date.now()
-  );
-
-  if (!usuario) {
-    return res.status(400).json({ error: "Token inválido o expirado." });
+  if (!nuevaPassword) {
+    return res.status(400).json({ error: 'La nueva contraseña es obligatoria.' });
   }
 
-  usuario.password = nuevaPassword;
-  usuario.tokenRecuperacion = null;
-  usuario.tokenExpira = null;
+  try {
+    const restaurante = await findRestaurantByToken(token);
 
-  return res.status(200).json({ message: "Contraseña actualizada correctamente." });
+    if (!restaurante) {
+      return res.status(400).json({ error: "Token inválido o expirado." });
+    }
+
+    await pool.query(
+      `UPDATE restaurantes
+       SET password_hash = $1,
+           reset_token = NULL,
+           reset_token_expires_at = NULL
+       WHERE id = $2`,
+      [nuevaPassword, restaurante.id]
+    );
+
+    return res.status(200).json({ message: "Contraseña actualizada correctamente." });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo actualizar la contraseña.' });
+  }
+});
+
+// 3.1) Cambio interno por correo (requiere token activo en backend)
+router.post('/recuperar/interno/cambiar', async (req, res) => {
+  const { email, nuevaPassword } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'El correo es obligatorio.' });
+  }
+
+  if (!nuevaPassword) {
+    return res.status(400).json({ error: 'La nueva contraseña es obligatoria.' });
+  }
+
+  try {
+    const restaurante = await findRestaurantByEmail(email);
+
+    if (!restaurante) {
+      return res.status(404).json({ error: 'El correo no está registrado.' });
+    }
+
+    if (!hasActiveRecoveryToken(restaurante)) {
+      return res.status(400).json({ error: 'No hay un token activo para este correo o ya expiró.' });
+    }
+
+    await pool.query(
+      `UPDATE restaurantes
+       SET password_hash = $1,
+           reset_token = NULL,
+           reset_token_expires_at = NULL
+       WHERE id = $2`,
+      [nuevaPassword, restaurante.id]
+    );
+
+    return res.status(200).json({ message: 'Contraseña actualizada correctamente.' });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo actualizar la contraseña.' });
+  }
 });
 
 module.exports = router;

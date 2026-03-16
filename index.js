@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const PORT = 4000;
+const { checkDbConnection } = require('./db/pool');
 
 // Importar rutas
 const registroRoutes = require('./Routes/Registro.js');
@@ -28,6 +29,19 @@ app.use('/api', generatepdf);
 
 app.get('/', (req, res) => {
   res.send('¡Backend funcionando correctamente!');
+});
+
+app.get('/api/health/db', async (req, res) => {
+  try {
+    await checkDbConnection();
+    return res.status(200).json({ ok: true, message: 'PostgreSQL disponible.' });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      message: 'No se pudo conectar a PostgreSQL.',
+      error: error.message,
+    });
+  }
 });
 
 app.listen(PORT, () => {

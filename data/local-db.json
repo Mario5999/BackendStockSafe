@@ -1,0 +1,68 @@
+{
+  "restaurantes": [
+    {
+      "id": 1772730087154,
+      "restaurantName": "La farandula",
+      "address": "calle santo tomas",
+      "phone": "9613429054",
+      "email": "capitan47@live.com.mx",
+      "password": "123456aQ",
+      "managerName": "Maria Martinez",
+      "managerEmail": "gtorito@gmail.com",
+      "tokenRecuperacion": null,
+      "tokenExpira": null
+    }
+  ],
+  "usuariosSistema": [
+    {
+      "id": 1772730115475,
+      "nombreCompleto": "Maria123",
+      "nombreUsuario": "maria123",
+      "contrasena": "804060",
+      "rol": "manager"
+    },
+    {
+      "id": 1772730136120,
+      "nombreCompleto": "Juan123",
+      "nombreUsuario": "juan123",
+      "contrasena": "804060",
+      "rol": "employee"
+    }
+  ],
+  "secciones": [
+    {
+      "id": 1772730801612,
+      "nombre": "Verdura"
+    },
+    {
+      "id": 1773107750811,
+      "nombre": "Bebidas"
+    }
+  ],
+  "productos": [
+    {
+      "id": 1772730834709,
+      "nombre": "Tomate",
+      "categoria": "Verdura",
+      "cantidad": 20,
+      "unidad": "kg",
+      "stockMinimo": 10,
+      "stockMaximo": 30,
+      "stockInicial": 20,
+      "entradas": 0,
+      "salidas": 0
+    },
+    {
+      "id": 1773107797907,
+      "nombre": "Vino",
+      "categoria": "Bebidas",
+      "cantidad": 10,
+      "unidad": "L",
+      "stockMinimo": 40,
+      "stockMaximo": 60,
+      "stockInicial": 20,
+      "entradas": 10,
+      "salidas": 20
+    }
+  ]
+}

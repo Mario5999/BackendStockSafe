@@ -4,6 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "db:up": "docker compose -f \"../Base de datos/docker-compose.db.yml\" up -d",
+    "db:down": "docker compose -f \"../Base de datos/docker-compose.db.yml\" down",
+    "db:logs": "docker compose -f \"../Base de datos/docker-compose.db.yml\" logs -f postgres",
+    "db:reset": "docker compose -f \"../Base de datos/docker-compose.db.yml\" down -v && docker compose -f \"../Base de datos/docker-compose.db.yml\" up -d",
+    "db:schema": "node db/run-sql.js schema",
+    "db:seed": "node db/run-sql.js seed",
+    "db:setup": "npm run db:schema && npm run db:seed",
+    "db:check": "node db/check-connection.js",
     "dev": "nodemon index.js",
     "start": "node index.js"
   },
@@ -12,9 +20,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "nodemailer": "^8.0.1",
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.17.2",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

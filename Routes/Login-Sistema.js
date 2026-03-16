@@ -1,21 +1,20 @@
 const express = require('express');
 const router = express.Router();
+const { pool } = require('../db/pool');
+
+function apiRole(dbRole) {
+  return dbRole === 'gerente' ? 'manager' : 'employee';
+}
 
 router.get('/user/login', (req, res) => {
   res.json({
-    message: 'Endpoint de login del sistema disponible',
-    metodo: 'Usa POST para iniciar sesión en el sistema'
+    message: 'Endpoint de login de usuarios internos disponible',
+    metodo: 'Usa POST para iniciar sesión como gerente o empleado'
   });
 });
 
-// Usuario simulado (luego lo puedes reemplazar por BD)
-const fakeUser = {
-  nombreUsuario: "mario123",
-  contrasena: "123456"
-};
-
 // Ruta POST para login del sistema
-router.post('/user/login', (req, res) => {
+router.post('/user/login', async (req, res) => {
   const { nombreUsuario, contrasena } = req.body;
 
   // Validar campos vacíos
@@ -23,23 +22,37 @@ router.post('/user/login', (req, res) => {
     return res.status(400).json({ error: "El usuario y la contraseña son obligatorios." });
   }
 
-  // Validar usuario
-  if (nombreUsuario !== fakeUser.nombreUsuario) {
-    return res.status(404).json({ error: "El usuario no existe." });
-  }
+  try {
+    const result = await pool.query(
+      'SELECT id, nombre_completo, usuario, password_hash, rol FROM restaurant_users WHERE lower(usuario) = lower($1) LIMIT 1',
+      [nombreUsuario]
+    );
 
-  // Validar contraseña
-  if (contrasena !== fakeUser.contrasena) {
-    return res.status(401).json({ error: "Contraseña incorrecta." });
-  }
+    const usuario = result.rows[0];
 
-  // Si todo está bien
-  return res.status(200).json({
-    message: "Login exitoso",
-    usuario: {
-      nombreUsuario: fakeUser.nombreUsuario
+    // Validar usuario
+    if (!usuario) {
+      return res.status(404).json({ error: "El usuario no existe." });
     }
-  });
+
+    // Validar contraseña
+    if (contrasena !== usuario.password_hash) {
+      return res.status(401).json({ error: "Contraseña incorrecta." });
+    }
+
+    // Si todo está bien
+    return res.status(200).json({
+      message: "Login exitoso",
+      usuario: {
+        id: Number(usuario.id),
+        nombreCompleto: usuario.nombre_completo,
+        nombreUsuario: usuario.usuario,
+        rol: apiRole(usuario.rol),
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo procesar el login de usuario interno.' });
+  }
 });
 
 module.exports = router;
