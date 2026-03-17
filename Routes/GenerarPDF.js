@@ -3,6 +3,7 @@ const router = express.Router();
 const PDFDocument = require('pdfkit');
 const { pool } = require('../db/pool');
 const { getDefaultRestaurantId } = require('../db/context');
+const { authenticateToken, requireRoles, getScopedRestaurantId } = require('../middleware/auth');
 
 const REPORT_DUPLICATE_WINDOW_SECONDS = 20;
 
@@ -19,12 +20,20 @@ function formatQuantity(value) {
 }
 
 async function resolveRestaurantId(queryRestaurantId) {
-  const requestedRestaurantId = Number(queryRestaurantId);
-  if (Number.isInteger(requestedRestaurantId) && requestedRestaurantId > 0) {
-    return requestedRestaurantId;
+  const scopedRestaurantId = getScopedRestaurantId(queryRestaurantId.req, {
+    queryValue: queryRestaurantId.value,
+    bodyValue: queryRestaurantId.bodyValue,
+  });
+
+  if (scopedRestaurantId) {
+    return scopedRestaurantId;
   }
 
-  return getDefaultRestaurantId();
+  if (queryRestaurantId.req.auth?.role === 'admin') {
+    return getDefaultRestaurantId();
+  }
+
+  return null;
 }
 
 function ensureSpace(doc, neededHeight) {
@@ -42,6 +51,7 @@ function buildSnapshotSignature(products) {
         toNumber(product.seccionId),
         toNumber(product.productoId),
         String(product.unidad || ''),
+        toNumber(product.cantidadSistema),
         toNumber(product.entradas),
         toNumber(product.salidas),
         toNumber(product.diferenciaVerificacion),
@@ -57,6 +67,7 @@ function buildStoredSnapshotSignature(items) {
         toNumber(item.seccion_id),
         toNumber(item.producto_id),
         String(item.unidad || ''),
+        toNumber(item.cantidad_sistema),
         toNumber(item.entradas),
         toNumber(item.salidas),
         toNumber(item.diferencia_verificacion),
@@ -86,14 +97,16 @@ async function findReusableReport(client, restauranteId, currentSignature) {
 
   const itemsResult = await client.query(
     `SELECT
-       seccion_id,
-       producto_id,
-       unidad,
-       entradas,
-       salidas,
-       diferencia_verificacion
-     FROM report_generation_items
-     WHERE report_generation_id = $1`,
+       rgi.seccion_id,
+       rgi.producto_id,
+       rgi.unidad,
+       COALESCE(p.cantidad, 0) AS cantidad_sistema,
+       rgi.entradas,
+       rgi.salidas,
+       rgi.diferencia_verificacion
+     FROM report_generation_items rgi
+     LEFT JOIN products p ON p.id = rgi.producto_id
+     WHERE rgi.report_generation_id = $1`,
     [latest.id]
   );
 
@@ -152,10 +165,11 @@ function renderInventoryPdf(res, options) {
     sectionProducts.forEach((product) => {
       ensureSpace(doc, 24);
       doc.fontSize(10).fillColor('#1f2937').text(
-        `${product.producto} (${product.unidad}) | Entradas: ${formatQuantity(product.entradas)} | Salidas: ${formatQuantity(product.salidas)} | Diferencia: ${formatQuantity(product.diferenciaVerificacion)}`
+        `${product.producto} (${product.unidad}) | Sistema: ${formatQuantity(product.cantidadSistema)} | Entradas: ${formatQuantity(product.entradas)} | Salidas: ${formatQuantity(product.salidas)} | Diferencia: ${formatQuantity(product.diferenciaVerificacion)}`
       );
     });
 
+    const sectionSistema = sectionProducts.reduce((sum, item) => sum + item.cantidadSistema, 0);
     const sectionEntradas = sectionProducts.reduce((sum, item) => sum + item.entradas, 0);
     const sectionSalidas = sectionProducts.reduce((sum, item) => sum + item.salidas, 0);
     const sectionDiferencia = sectionProducts.reduce((sum, item) => sum + item.diferenciaVerificacion, 0);
@@ -163,7 +177,7 @@ function renderInventoryPdf(res, options) {
     ensureSpace(doc, 28);
     doc.moveDown(0.2);
     doc.fontSize(10).fillColor('#374151').text(
-      `Total sección | Entradas: ${formatQuantity(sectionEntradas)} | Salidas: ${formatQuantity(sectionSalidas)} | Diferencia: ${formatQuantity(sectionDiferencia)}`
+      `Total sección | Sistema: ${formatQuantity(sectionSistema)} | Entradas: ${formatQuantity(sectionEntradas)} | Salidas: ${formatQuantity(sectionSalidas)} | Diferencia: ${formatQuantity(sectionDiferencia)}`
     );
     doc.moveDown(0.8);
   });
@@ -171,10 +185,12 @@ function renderInventoryPdf(res, options) {
   doc.end();
 }
 
+router.use(authenticateToken);
+
 // GET: Generar PDF y descargarlo
-router.get('/reportes/generar', async (req, res) => {
+router.get('/reportes/generar', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   try {
-    const restauranteId = await resolveRestaurantId(req.query.restauranteId);
+    const restauranteId = await resolveRestaurantId({ req, value: req.query.restauranteId });
     if (!restauranteId) {
       return res.status(404).json({ error: 'No existe un restaurante válido para generar el reporte.' });
     }
@@ -196,6 +212,7 @@ router.get('/reportes/generar', async (req, res) => {
          s.nombre AS seccion,
          p.nombre AS producto,
          p.unidad,
+         p.cantidad AS cantidad_sistema,
          COALESCE(SUM(CASE WHEN m.movement_type = 'entry' THEN m.quantity ELSE 0 END), 0) AS entradas,
          COALESCE(SUM(CASE WHEN m.movement_type = 'exit' THEN m.quantity ELSE 0 END), 0) AS salidas,
          COALESCE(last_check.diferencia, 0) AS diferencia_verificacion
@@ -210,7 +227,7 @@ router.get('/reportes/generar', async (req, res) => {
          LIMIT 1
        ) last_check ON TRUE
        WHERE p.restaurante_id = $1
-       GROUP BY s.id, s.nombre, p.id, p.nombre, p.unidad, last_check.diferencia
+       GROUP BY s.id, s.nombre, p.id, p.nombre, p.unidad, p.cantidad, last_check.diferencia
        ORDER BY s.nombre ASC, p.nombre ASC`,
       [restauranteId]
     );
@@ -221,6 +238,7 @@ router.get('/reportes/generar', async (req, res) => {
       seccion: row.seccion,
       producto: row.producto,
       unidad: row.unidad,
+      cantidadSistema: toNumber(row.cantidad_sistema),
       entradas: toNumber(row.entradas),
       salidas: toNumber(row.salidas),
       diferenciaVerificacion: toNumber(row.diferencia_verificacion),
@@ -316,10 +334,10 @@ router.get('/reportes/generar', async (req, res) => {
 });
 
 // GET: visualizar un reporte histórico por su ID
-router.get('/reportes/ver/:reportId', async (req, res) => {
+router.get('/reportes/ver/:reportId', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   try {
     const reportId = Number(req.params.reportId);
-    const restauranteId = Number(req.query.restauranteId);
+    const restauranteId = await resolveRestaurantId({ req, value: req.query.restauranteId });
 
     if (!Number.isInteger(reportId) || reportId <= 0) {
       return res.status(400).json({ error: 'reportId inválido.' });
@@ -349,15 +367,17 @@ router.get('/reportes/ver/:reportId', async (req, res) => {
 
     const itemsResult = await pool.query(
       `SELECT
-         seccion_nombre AS seccion,
-         producto_nombre AS producto,
-         unidad,
-         entradas,
-         salidas,
-         diferencia_verificacion
-       FROM report_generation_items
-       WHERE report_generation_id = $1 AND restaurante_id = $2
-       ORDER BY seccion_nombre ASC, producto_nombre ASC`,
+         rgi.seccion_nombre AS seccion,
+         rgi.producto_nombre AS producto,
+         rgi.unidad,
+         COALESCE(p.cantidad, 0) AS cantidad_sistema,
+         rgi.entradas,
+         rgi.salidas,
+         rgi.diferencia_verificacion
+       FROM report_generation_items rgi
+       LEFT JOIN products p ON p.id = rgi.producto_id
+       WHERE rgi.report_generation_id = $1 AND rgi.restaurante_id = $2
+       ORDER BY rgi.seccion_nombre ASC, rgi.producto_nombre ASC`,
       [reportId, restauranteId]
     );
 
@@ -365,6 +385,7 @@ router.get('/reportes/ver/:reportId', async (req, res) => {
       seccion: row.seccion,
       producto: row.producto,
       unidad: row.unidad,
+      cantidadSistema: toNumber(row.cantidad_sistema),
       entradas: toNumber(row.entradas),
       salidas: toNumber(row.salidas),
       diferenciaVerificacion: toNumber(row.diferencia_verificacion),
@@ -383,10 +404,10 @@ router.get('/reportes/ver/:reportId', async (req, res) => {
 });
 
 // GET: historial de reportes generados por restaurante
-router.get('/reportes/historial', async (req, res) => {
+router.get('/reportes/historial', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   try {
-    const restauranteId = Number(req.query.restauranteId);
-    if (!Number.isInteger(restauranteId) || restauranteId <= 0) {
+    const restauranteId = await resolveRestaurantId({ req, value: req.query.restauranteId });
+    if (!restauranteId) {
       return res.status(400).json({ error: 'restauranteId inválido.' });
     }
 

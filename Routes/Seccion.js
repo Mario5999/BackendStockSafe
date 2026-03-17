@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
 const { getDefaultRestaurantId } = require('../db/context');
+const { authenticateToken, requireRoles, getScopedRestaurantId } = require('../middleware/auth');
 
 function mapSection(section) {
   return {
@@ -10,8 +11,20 @@ function mapSection(section) {
   };
 }
 
+async function resolveRestaurantId(req) {
+  let restauranteId = getScopedRestaurantId(req, { queryValue: req.query.restauranteId });
+
+  if (!restauranteId && req.auth?.role === 'admin') {
+    restauranteId = await getDefaultRestaurantId();
+  }
+
+  return restauranteId;
+}
+
+router.use(authenticateToken);
+
 // Crear sección
-router.post('/sections', async (req, res) => {
+router.post('/sections', requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
   const { nombre } = req.body;
 
   if (!nombre) {
@@ -19,7 +32,7 @@ router.post('/sections', async (req, res) => {
   }
 
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req);
     if (!restauranteId) {
       return res.status(400).json({ error: 'No existe un restaurante configurado para crear secciones.' });
     }
@@ -43,9 +56,9 @@ router.post('/sections', async (req, res) => {
 });
 
 // Obtener todas las secciones
-router.get('/sections', async (req, res) => {
+router.get('/sections', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req);
     if (!restauranteId) {
       return res.status(200).json({ message: 'Lista de secciones', data: [] });
     }
@@ -65,12 +78,12 @@ router.get('/sections', async (req, res) => {
 });
 
 // Editar sección por ID
-router.put('/sections/:id', async (req, res) => {
+router.put('/sections/:id', requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
   const { id } = req.params;
   const { nombre } = req.body;
 
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req);
     if (!restauranteId) {
       return res.status(404).json({ error: "La sección no existe." });
     }
@@ -99,11 +112,11 @@ router.put('/sections/:id', async (req, res) => {
 });
 
 // Eliminar sección
-router.delete('/sections/:id', async (req, res) => {
+router.delete('/sections/:id', requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
   const { id } = req.params;
 
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req);
     if (!restauranteId) {
       return res.status(404).json({ error: "La sección no existe." });
     }

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
 const { getDefaultRestaurantId } = require('../db/context');
+const { authenticateToken, requireRoles, getScopedRestaurantId } = require('../middleware/auth');
+const { hashPassword } = require('../utils/security');
 
 function normalizeRole(rol) {
   const value = String(rol || '').trim().toLowerCase();
@@ -39,14 +41,14 @@ router.get('/user/register', (req, res) => {
   });
 });
 
-router.get('/user/users', async (req, res) => {
-  const requestedRestaurantId = Number(req.query.restauranteId);
+router.get('/user/users', authenticateToken, requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
 
   try {
-    const restauranteId =
-      Number.isInteger(requestedRestaurantId) && requestedRestaurantId > 0
-        ? requestedRestaurantId
-        : await getDefaultRestaurantId(pool);
+    let restauranteId = getScopedRestaurantId(req, { queryValue: req.query.restauranteId });
+
+    if (!restauranteId && req.auth?.role === 'admin') {
+      restauranteId = await getDefaultRestaurantId(pool);
+    }
 
     if (!restauranteId) {
       return res.status(200).json({
@@ -75,7 +77,7 @@ router.get('/user/users', async (req, res) => {
 });
 
 // Ruta POST para registrar usuarios del sistema
-router.post('/user/register', async (req, res) => {
+router.post('/user/register', authenticateToken, requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
   const {
     restauranteId,
     nombreCompleto,
@@ -101,9 +103,9 @@ router.post('/user/register', async (req, res) => {
   }
 
   try {
-    let targetRestaurantId = restauranteId ? Number(restauranteId) : null;
+    let targetRestaurantId = getScopedRestaurantId(req, { bodyValue: restauranteId });
 
-    if (!targetRestaurantId) {
+    if (!targetRestaurantId && req.auth?.role === 'admin') {
       targetRestaurantId = await getDefaultRestaurantId(pool);
     }
 
@@ -116,11 +118,13 @@ router.post('/user/register', async (req, res) => {
       return res.status(404).json({ error: 'El restaurante indicado no existe.' });
     }
 
+    const passwordHash = await hashPassword(contrasena);
+
     const created = await pool.query(
       `INSERT INTO restaurant_users (restaurante_id, nombre_completo, usuario, password_hash, rol)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, restaurante_id, nombre_completo, usuario, rol`,
-      [targetRestaurantId, nombreCompleto, nombreUsuario, contrasena, normalizedRole]
+      [targetRestaurantId, nombreCompleto, nombreUsuario, passwordHash, normalizedRole]
     );
 
     const row = created.rows[0];

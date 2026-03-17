@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
-const bcrypt = require('bcrypt');
+const { signAccessToken } = require('../utils/jwt');
+const { hashPassword, verifyPassword } = require('../utils/security');
 
 router.get('/login', (req, res) => {
   res.json({ 
@@ -32,14 +33,27 @@ router.post('/login', async (req, res) => {
       return res.status(404).json({ error: "El correo no existe." });
     }
 
-    // Validar contraseña
-    if (password !== restaurante.password_hash) {
+    const passwordCheck = await verifyPassword(password, restaurante.password_hash);
+    if (!passwordCheck.match) {
       return res.status(401).json({ error: "Contraseña incorrecta." });
     }
+
+    if (passwordCheck.needsRehash) {
+      const newHash = await hashPassword(password);
+      await pool.query('UPDATE restaurantes SET password_hash = $1 WHERE id = $2', [newHash, restaurante.id]);
+    }
+
+    const token = signAccessToken({
+      sub: Number(restaurante.id),
+      role: 'restaurant',
+      restauranteId: Number(restaurante.id),
+      email: restaurante.email,
+    });
 
     // Si todo está bien
     return res.status(200).json({
       message: "Login exitoso",
+      token,
       user: {
         id: Number(restaurante.id),
         email: restaurante.email,
@@ -71,13 +85,25 @@ router.post('/admin/login', async (req, res) => {
       return res.status(404).json({ error: "El correo no existe." });
     }
 
-    const passwordMatch = await bcrypt.compare(password, admin.password_hash);
-    if (!passwordMatch) {
+    const passwordCheck = await verifyPassword(password, admin.password_hash);
+    if (!passwordCheck.match) {
       return res.status(401).json({ error: "Contraseña incorrecta." });
     }
 
+    if (passwordCheck.needsRehash) {
+      const newHash = await hashPassword(password);
+      await pool.query('UPDATE system_users SET password_hash = $1 WHERE id = $2', [newHash, admin.id]);
+    }
+
+    const token = signAccessToken({
+      sub: Number(admin.id),
+      role: 'admin',
+      email: admin.email,
+    });
+
     return res.status(200).json({
       message: "Login exitoso",
+      token,
       admin: {
         id: Number(admin.id),
         email: admin.email,

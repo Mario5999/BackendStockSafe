@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
 const { getDefaultRestaurantId, getDefaultRestaurantUserId } = require('../db/context');
+const { authenticateToken, requireRoles, getScopedRestaurantId } = require('../middleware/auth');
 
 function mapProduct(product) {
   return {
@@ -28,14 +29,26 @@ function emptyDashboardIndicators() {
   };
 }
 
-router.get('/dashboard/indicators', async (req, res) => {
+async function resolveRestaurantId(req, options = {}) {
+  let restauranteId = getScopedRestaurantId(req, {
+    queryValue: options.queryValue,
+    bodyValue: options.bodyValue,
+  });
+
+  if (!restauranteId && req.auth?.role === 'admin') {
+    restauranteId = await getDefaultRestaurantId();
+  }
+
+  return restauranteId;
+}
+
+router.use(authenticateToken);
+
+router.get('/dashboard/indicators', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   const requestedRestaurantId = Number(req.query.restauranteId);
 
   try {
-    const restauranteId =
-      Number.isInteger(requestedRestaurantId) && requestedRestaurantId > 0
-        ? requestedRestaurantId
-        : await getDefaultRestaurantId();
+    let restauranteId = await resolveRestaurantId(req, { queryValue: requestedRestaurantId });
 
     if (!restauranteId) {
       return res.status(200).json({
@@ -106,7 +119,7 @@ router.get('/dashboard/indicators', async (req, res) => {
 });
 
 // Verificar inventario
-router.post('/inventory/check', async (req, res) => {
+router.post('/inventory/check', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   const { productId, cantidadFisica } = req.body;
 
   const fisico = Number(cantidadFisica);
@@ -115,7 +128,7 @@ router.post('/inventory/check', async (req, res) => {
   }
 
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req, { bodyValue: req.body.restauranteId });
     if (!restauranteId) {
       return res.status(404).json({ error: "Producto no encontrado." });
     }
@@ -171,7 +184,7 @@ router.post('/inventory/check', async (req, res) => {
 });
 
 // PUT: actualizar solo la cantidad de un producto
-router.put('/products/:id/cantidad', async (req, res) => {
+router.put('/products/:id/cantidad', requireRoles('admin', 'restaurant', 'manager', 'employee'), async (req, res) => {
   const { id } = req.params;
   const { cantidad } = req.body;
 
@@ -185,7 +198,7 @@ router.put('/products/:id/cantidad', async (req, res) => {
   }
 
   try {
-    const restauranteId = await getDefaultRestaurantId();
+    const restauranteId = await resolveRestaurantId(req, { bodyValue: req.body.restauranteId });
     if (!restauranteId) {
       return res.status(404).json({ error: "Producto no encontrado." });
     }

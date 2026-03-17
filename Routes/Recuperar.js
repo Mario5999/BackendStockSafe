@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { pool } = require('../db/pool');
+const { hashPassword, isStrongPassword } = require('../utils/security');
 
 async function findRestaurantByEmail(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -119,6 +120,12 @@ router.post('/recuperar/cambiar', async (req, res) => {
     return res.status(400).json({ error: 'La nueva contraseña es obligatoria.' });
   }
 
+  if (!isStrongPassword(nuevaPassword)) {
+    return res.status(400).json({
+      error: 'La contrasena debe tener al menos 8 caracteres, con una mayuscula, una minuscula, un numero y un simbolo.',
+    });
+  }
+
   try {
     const restaurante = await findRestaurantByToken(token);
 
@@ -126,13 +133,15 @@ router.post('/recuperar/cambiar', async (req, res) => {
       return res.status(400).json({ error: "Token inválido o expirado." });
     }
 
+    const passwordHash = await hashPassword(nuevaPassword);
+
     await pool.query(
       `UPDATE restaurantes
        SET password_hash = $1,
            reset_token = NULL,
            reset_token_expires_at = NULL
        WHERE id = $2`,
-      [nuevaPassword, restaurante.id]
+      [passwordHash, restaurante.id]
     );
 
     return res.status(200).json({ message: "Contraseña actualizada correctamente." });
@@ -153,6 +162,12 @@ router.post('/recuperar/interno/cambiar', async (req, res) => {
     return res.status(400).json({ error: 'La nueva contraseña es obligatoria.' });
   }
 
+  if (!isStrongPassword(nuevaPassword)) {
+    return res.status(400).json({
+      error: 'La contrasena debe tener al menos 8 caracteres, con una mayuscula, una minuscula, un numero y un simbolo.',
+    });
+  }
+
   try {
     const restaurante = await findRestaurantByEmail(email);
 
@@ -164,13 +179,15 @@ router.post('/recuperar/interno/cambiar', async (req, res) => {
       return res.status(400).json({ error: 'No hay un token activo para este correo o ya expiró.' });
     }
 
+    const passwordHash = await hashPassword(nuevaPassword);
+
     await pool.query(
       `UPDATE restaurantes
        SET password_hash = $1,
            reset_token = NULL,
            reset_token_expires_at = NULL
        WHERE id = $2`,
-      [nuevaPassword, restaurante.id]
+      [passwordHash, restaurante.id]
     );
 
     return res.status(200).json({ message: 'Contraseña actualizada correctamente.' });

@@ -16,6 +16,19 @@ const generatepdf = require('./Routes/GenerarPDF.js');
 
 app.use(express.json());
 
+app.get('/api/health/db', async (req, res) => {
+  try {
+    await checkDbConnection();
+    return res.status(200).json({ ok: true, message: 'PostgreSQL disponible.' });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      message: 'No se pudo conectar a PostgreSQL.',
+      error: error.message,
+    });
+  }
+});
+
 // Usar rutas
 app.use('/api', registroRoutes);
 app.use('/api', loginRoutes);
@@ -31,19 +44,10 @@ app.get('/', (req, res) => {
   res.send('¡Backend funcionando correctamente!');
 });
 
-app.get('/api/health/db', async (req, res) => {
-  try {
-    await checkDbConnection();
-    return res.status(200).json({ ok: true, message: 'PostgreSQL disponible.' });
-  } catch (error) {
-    return res.status(503).json({
-      ok: false,
-      message: 'No se pudo conectar a PostgreSQL.',
-      error: error.message,
-    });
-  }
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-});
+module.exports = app;

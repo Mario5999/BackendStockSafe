@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
+const { signAccessToken } = require('../utils/jwt');
+const { hashPassword, verifyPassword } = require('../utils/security');
 
 function apiRole(dbRole) {
   return dbRole === 'gerente' ? 'manager' : 'employee';
@@ -24,7 +26,7 @@ router.post('/user/login', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT id, nombre_completo, usuario, password_hash, rol FROM restaurant_users WHERE lower(usuario) = lower($1) LIMIT 1',
+      'SELECT id, restaurante_id, nombre_completo, usuario, password_hash, rol FROM restaurant_users WHERE lower(usuario) = lower($1) LIMIT 1',
       [nombreUsuario]
     );
 
@@ -35,19 +37,34 @@ router.post('/user/login', async (req, res) => {
       return res.status(404).json({ error: "El usuario no existe." });
     }
 
-    // Validar contraseña
-    if (contrasena !== usuario.password_hash) {
+    const passwordCheck = await verifyPassword(contrasena, usuario.password_hash);
+    if (!passwordCheck.match) {
       return res.status(401).json({ error: "Contraseña incorrecta." });
     }
+
+    if (passwordCheck.needsRehash) {
+      const newHash = await hashPassword(contrasena);
+      await pool.query('UPDATE restaurant_users SET password_hash = $1 WHERE id = $2', [newHash, usuario.id]);
+    }
+
+    const role = apiRole(usuario.rol);
+    const token = signAccessToken({
+      sub: Number(usuario.id),
+      role,
+      restauranteId: Number(usuario.restaurante_id),
+      username: usuario.usuario,
+    });
 
     // Si todo está bien
     return res.status(200).json({
       message: "Login exitoso",
+      token,
       usuario: {
         id: Number(usuario.id),
+        restauranteId: Number(usuario.restaurante_id),
         nombreCompleto: usuario.nombre_completo,
         nombreUsuario: usuario.usuario,
-        rol: apiRole(usuario.rol),
+        rol: role,
       }
     });
   } catch (error) {

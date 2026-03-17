@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/pool');
+const { authenticateToken, requireRoles } = require('../middleware/auth');
+const { hashPassword, isStrongPassword } = require('../utils/security');
+const { signAccessToken } = require('../utils/jwt');
 
 function sanitizeRestaurant(restaurant) {
   return {
@@ -48,7 +51,15 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Las contraseñas no coinciden.' });
   }
 
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({
+      error: 'La contrasena debe tener al menos 8 caracteres, con una mayuscula, una minuscula, un numero y un simbolo.',
+    });
+  }
+
   try {
+    const passwordHash = await hashPassword(password);
+
     const result = await pool.query(
       `INSERT INTO restaurantes (
         restaurant_name,
@@ -61,12 +72,21 @@ router.post('/register', async (req, res) => {
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *`,
-      [restaurantName, address, phone, email, password, managerName, managerEmail]
+      [restaurantName, address, phone, email, passwordHash, managerName, managerEmail]
     );
+
+    const createdRestaurant = sanitizeRestaurant(result.rows[0]);
+    const token = signAccessToken({
+      sub: createdRestaurant.id,
+      role: 'restaurant',
+      restauranteId: createdRestaurant.id,
+      email: createdRestaurant.email,
+    });
 
     return res.status(201).json({
       message: 'Restaurante registrado correctamente.',
-      data: sanitizeRestaurant(result.rows[0])
+      token,
+      data: createdRestaurant,
     });
   } catch (error) {
     if (error.code === '23505') {
@@ -78,7 +98,7 @@ router.post('/register', async (req, res) => {
 });
 
 // GET: obtener todos los restaurantes
-router.get('/register', async (req, res) => {
+router.get('/register', authenticateToken, requireRoles('admin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM restaurantes ORDER BY id ASC');
 
@@ -92,7 +112,7 @@ router.get('/register', async (req, res) => {
 });
 
 // PUT: editar restaurante
-router.put('/register/:id', async (req, res) => {
+router.put('/register/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
   const { id } = req.params;
   const {
     restaurantName,
@@ -147,7 +167,7 @@ router.put('/register/:id', async (req, res) => {
 });
 
 // DELETE: eliminar restaurante
-router.delete('/register/:id', async (req, res) => {
+router.delete('/register/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
   const { id } = req.params;
 
   try {
