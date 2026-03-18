@@ -76,6 +76,57 @@ router.get('/user/users', authenticateToken, requireRoles('admin', 'restaurant',
   }
 });
 
+router.delete('/user/users/:id', authenticateToken, requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
+  const userId = Number(req.params.id);
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'ID de usuario invalido.' });
+  }
+
+  try {
+    let restauranteId = getScopedRestaurantId(req, {
+      queryValue: req.query.restauranteId,
+      bodyValue: req.body?.restauranteId,
+    });
+
+    if (!restauranteId && req.auth?.role === 'admin') {
+      restauranteId = await getDefaultRestaurantId(pool);
+    }
+
+    if (!restauranteId) {
+      return res.status(400).json({ error: 'No existe un restaurante valido para eliminar el usuario.' });
+    }
+
+    const currentUser = await pool.query(
+      `SELECT id, restaurante_id, nombre_completo, usuario, rol
+       FROM restaurant_users
+       WHERE id = $1 AND restaurante_id = $2
+       LIMIT 1`,
+      [userId, restauranteId]
+    );
+
+    const user = currentUser.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: 'El usuario no existe.' });
+    }
+
+    await pool.query('DELETE FROM restaurant_users WHERE id = $1 AND restaurante_id = $2', [userId, restauranteId]);
+
+    return res.status(200).json({
+      message: 'Usuario eliminado correctamente.',
+      data: mapRestaurantUser(user),
+    });
+  } catch (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'No se puede eliminar este usuario porque tiene movimientos o verificaciones de inventario asociados.',
+      });
+    }
+
+    return res.status(500).json({ error: 'No se pudo eliminar el usuario interno.' });
+  }
+});
+
 // Ruta POST para registrar usuarios del sistema
 router.post('/user/register', authenticateToken, requireRoles('admin', 'restaurant', 'manager'), async (req, res) => {
   const {
