@@ -227,6 +227,7 @@ router.get('/reportes/generar', requireRoles('admin', 'restaurant', 'manager', '
          LIMIT 1
        ) last_check ON TRUE
        WHERE p.restaurante_id = $1
+         AND p.is_active = TRUE
        GROUP BY s.id, s.nombre, p.id, p.nombre, p.unidad, p.cantidad, last_check.diferencia
        ORDER BY s.nombre ASC, p.nombre ASC`,
       [restauranteId]

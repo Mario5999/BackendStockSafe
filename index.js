@@ -34,10 +34,10 @@ app.use('/api', registroRoutes);
 app.use('/api', loginRoutes);
 app.use('/api', registrosystemRoutes);
 app.use('/api', loginsystemRoutes);
+app.use('/api', recoverpassword);
 app.use('/api', seccionRoutes);
 app.use('/api', productoRoutes);
 app.use('/api', inventoryRoutes);
-app.use('/api', recoverpassword);
 app.use('/api', generatepdf);
 
 app.get('/', (req, res) => {

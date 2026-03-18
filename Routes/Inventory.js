@@ -63,11 +63,13 @@ router.get('/dashboard/indicators', requireRoles('admin', 'restaurant', 'manager
            SELECT COUNT(*)
            FROM products p
            WHERE p.restaurante_id = $1
+             AND p.is_active = TRUE
          ), 0)::int AS total_items,
          COALESCE((
            SELECT COUNT(*)
            FROM products p
            WHERE p.restaurante_id = $1
+             AND p.is_active = TRUE
              AND p.cantidad < p.stock_minimo
              AND p.cantidad > 0
          ), 0)::int AS stock_bajo,
@@ -75,12 +77,14 @@ router.get('/dashboard/indicators', requireRoles('admin', 'restaurant', 'manager
            SELECT COUNT(*)
            FROM products p
            WHERE p.restaurante_id = $1
+             AND p.is_active = TRUE
              AND p.cantidad > p.stock_maximo
          ), 0)::int AS excedentes,
          COALESCE((
            SELECT COUNT(*)
            FROM products p
            WHERE p.restaurante_id = $1
+             AND p.is_active = TRUE
              AND p.cantidad = 0
          ), 0)::int AS sin_stock,
          (
@@ -89,6 +93,7 @@ router.get('/dashboard/indicators', requireRoles('admin', 'restaurant', 'manager
              FROM inventory_movements m
              JOIN products p ON p.id = m.product_id
              WHERE p.restaurante_id = $1
+               AND p.is_active = TRUE
            ), 0)
            +
            COALESCE((
@@ -96,6 +101,7 @@ router.get('/dashboard/indicators', requireRoles('admin', 'restaurant', 'manager
              FROM inventory_checks c
              JOIN products p ON p.id = c.product_id
              WHERE p.restaurante_id = $1
+               AND p.is_active = TRUE
            ), 0)
          )::int AS actualizaciones`,
       [restauranteId]
@@ -134,7 +140,7 @@ router.post('/inventory/check', requireRoles('admin', 'restaurant', 'manager', '
     }
 
     const productResult = await pool.query(
-      'SELECT id, cantidad FROM products WHERE id = $1 AND restaurante_id = $2 LIMIT 1',
+      'SELECT id, cantidad FROM products WHERE id = $1 AND restaurante_id = $2 AND is_active = TRUE LIMIT 1',
       [productId, restauranteId]
     );
 
@@ -211,7 +217,7 @@ router.put('/products/:id/cantidad', requireRoles('admin', 'restaurant', 'manage
         `SELECT p.id, p.nombre, s.nombre AS categoria, p.cantidad, p.unidad, p.stock_minimo, p.stock_maximo
          FROM products p
          JOIN sections s ON s.id = p.section_id
-         WHERE p.id = $1 AND p.restaurante_id = $2
+         WHERE p.id = $1 AND p.restaurante_id = $2 AND p.is_active = TRUE
          FOR UPDATE`,
         [id, restauranteId]
       );
@@ -228,7 +234,7 @@ router.put('/products/:id/cantidad', requireRoles('admin', 'restaurant', 'manage
       const updatedResult = await client.query(
         `UPDATE products
          SET cantidad = $1
-         WHERE id = $2 AND restaurante_id = $3
+         WHERE id = $2 AND restaurante_id = $3 AND is_active = TRUE
          RETURNING id, nombre, cantidad, unidad, stock_minimo, stock_maximo`,
         [nuevaCantidad, id, restauranteId]
       );

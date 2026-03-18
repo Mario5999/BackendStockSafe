@@ -67,7 +67,7 @@ router.post('/products', requireRoles('admin', 'restaurant', 'manager'), async (
   }
 
   try {
-    const restauranteId = await resolveRestaurantId({ req, value: req.body.restauranteId });
+    const restauranteId = await resolveRestaurantId({ req, value: req.body?.restauranteId });
     if (!restauranteId) {
       return res.status(400).json({ error: 'No existe un restaurante configurado para crear productos.' });
     }
@@ -143,6 +143,7 @@ router.get('/products', requireRoles('admin', 'restaurant', 'manager', 'employee
          LIMIT 1
        ) last_check ON TRUE
        WHERE p.restaurante_id = $1
+         AND p.is_active = TRUE
        GROUP BY p.id, p.nombre, s.nombre, p.cantidad, p.unidad, p.stock_minimo, p.stock_maximo, last_check.diferencia
        ORDER BY p.id ASC`,
       [restauranteId]
@@ -163,7 +164,7 @@ router.put('/products/:id', requireRoles('admin', 'restaurant', 'manager'), asyn
   const { nombre, categoria, cantidad, unidad, stockMinimo, stockMaximo, stockExcedente } = req.body;
 
   try {
-    const restauranteId = await resolveRestaurantId({ req, value: req.body.restauranteId });
+    const restauranteId = await resolveRestaurantId({ req, value: req.body?.restauranteId });
     if (!restauranteId) {
       return res.status(404).json({ error: "El producto no existe." });
     }
@@ -173,7 +174,7 @@ router.put('/products/:id', requireRoles('admin', 'restaurant', 'manager'), asyn
               s.nombre AS categoria
        FROM products p
        JOIN sections s ON s.id = p.section_id
-       WHERE p.id = $1 AND p.restaurante_id = $2`,
+       WHERE p.id = $1 AND p.restaurante_id = $2 AND p.is_active = TRUE`,
       [id, restauranteId]
     );
 
@@ -254,7 +255,7 @@ router.delete('/products/:id', requireRoles('admin', 'restaurant', 'manager'), a
   const { id } = req.params;
 
   try {
-    const restauranteId = await resolveRestaurantId({ req, value: req.body.restauranteId });
+    const restauranteId = await resolveRestaurantId({ req, value: req.body?.restauranteId });
     if (!restauranteId) {
       return res.status(404).json({ error: "El producto no existe." });
     }
@@ -263,7 +264,7 @@ router.delete('/products/:id', requireRoles('admin', 'restaurant', 'manager'), a
       `SELECT p.id, p.nombre, s.nombre AS categoria, p.cantidad, p.unidad, p.stock_minimo, p.stock_maximo
        FROM products p
        JOIN sections s ON s.id = p.section_id
-       WHERE p.id = $1 AND p.restaurante_id = $2`,
+       WHERE p.id = $1 AND p.restaurante_id = $2 AND p.is_active = TRUE`,
       [id, restauranteId]
     );
 
@@ -272,7 +273,10 @@ router.delete('/products/:id', requireRoles('admin', 'restaurant', 'manager'), a
       return res.status(404).json({ error: "El producto no existe." });
     }
 
-    await pool.query('DELETE FROM products WHERE id = $1 AND restaurante_id = $2', [id, restauranteId]);
+    await pool.query(
+      'UPDATE products SET is_active = FALSE, deleted_at = NOW() WHERE id = $1 AND restaurante_id = $2 AND is_active = TRUE',
+      [id, restauranteId]
+    );
 
     return res.status(200).json({
       message: "Producto eliminado correctamente.",
