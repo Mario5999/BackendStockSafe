@@ -83,6 +83,8 @@ router.delete('/user/users/:id', authenticateToken, requireRoles('admin', 'resta
     return res.status(400).json({ error: 'ID de usuario invalido.' });
   }
 
+  let client;
+
   try {
     let restauranteId = getScopedRestaurantId(req, {
       queryValue: req.query.restauranteId,
@@ -97,26 +99,40 @@ router.delete('/user/users/:id', authenticateToken, requireRoles('admin', 'resta
       return res.status(400).json({ error: 'No existe un restaurante valido para eliminar el usuario.' });
     }
 
-    const currentUser = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const currentUser = await client.query(
       `SELECT id, restaurante_id, nombre_completo, usuario, rol
        FROM restaurant_users
        WHERE id = $1 AND restaurante_id = $2
-       LIMIT 1`,
+       LIMIT 1
+       FOR UPDATE`,
       [userId, restauranteId]
     );
 
     const user = currentUser.rows[0];
     if (!user) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'El usuario no existe.' });
     }
 
-    await pool.query('DELETE FROM restaurant_users WHERE id = $1 AND restaurante_id = $2', [userId, restauranteId]);
+    await client.query('DELETE FROM restaurant_users WHERE id = $1 AND restaurante_id = $2', [userId, restauranteId]);
+    await client.query('COMMIT');
 
     return res.status(200).json({
       message: 'Usuario eliminado correctamente.',
       data: mapRestaurantUser(user),
     });
   } catch (error) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        // Ignorar error de rollback para priorizar respuesta del endpoint.
+      }
+    }
+
     if (error.code === '23503') {
       return res.status(409).json({
         error: 'No se puede eliminar este usuario porque tiene movimientos o verificaciones de inventario asociados.',
@@ -124,6 +140,10 @@ router.delete('/user/users/:id', authenticateToken, requireRoles('admin', 'resta
     }
 
     return res.status(500).json({ error: 'No se pudo eliminar el usuario interno.' });
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 });
 
